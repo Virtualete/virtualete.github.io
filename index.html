@@ -52,6 +52,27 @@ td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
 .fig:focus-visible{outline:2px solid var(--note);outline-offset:2px}
 .zoom-hint{position:absolute;right:8px;top:6px;font-size:16px;color:#fff;opacity:.55;pointer-events:none}
 .fig:hover .zoom-hint{opacity:1}
+.mg-view{position:relative;height:calc(100vh - 200px);min-height:420px;margin:12px 0;background:#14161d;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mg-view.full{position:fixed;inset:0;height:auto;margin:0;z-index:40;border-radius:0;border:0}
+.mg-stage{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab}.mg-stage.drag{cursor:grabbing}
+.mg-content{position:absolute;left:0;top:0}.mg-content svg{display:block;width:100%;height:100%}
+.mg-tools{position:absolute;right:10px;top:10px;display:flex;gap:6px;z-index:2}
+.mg-tools button{min-height:34px;min-width:34px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:0 10px;font:inherit;font-size:14px;cursor:pointer}
+.mg-tools button:hover{border-color:var(--muted)}
+.mg-view [data-room]{cursor:pointer}
+.mg-view [data-room].sel polygon,.mg-view [data-room].sel rect,.mg-view polygon[data-room].sel{stroke:#fff!important;stroke-width:4px!important}
+.mg-card{position:absolute;right:10px;top:54px;max-height:calc(100% - 64px);width:min(380px,calc(100% - 20px));overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;z-index:3;font-size:14px;box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.mg-card[hidden]{display:none}.mg-card h3{font-family:var(--display);font-size:20px;margin:0 30px 2px 0}
+.mg-card h5{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:12px 0 4px}
+.mg-card ul{margin:0;padding-left:18px}.mg-card li{margin:2px 0}.mg-card a{cursor:pointer}
+.mg-card .x{position:absolute;right:8px;top:8px;min-height:30px;min-width:30px;border:1px solid var(--line);background:none;color:var(--text);border-radius:8px;cursor:pointer}
+.mg-tag{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin:2px 4px 2px 0;font-size:12px;color:var(--muted)}
+.mg-filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:16px 0 4px}
+.mg-filters input[type=search]{min-height:38px;min-width:min(320px,100%);background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:0 12px;font:inherit}
+.mg-muted{color:var(--muted)}.mg-h3{font-family:var(--display);margin:28px 0 8px;font-size:22px}
+.mg-table-wrap{overflow-x:auto}.mg-table{font-size:14px}.mg-table th small{display:block;color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none}
+.mg-table code{font-size:12px;color:var(--muted)}
+.mg-st-ok{color:#7bd88f}.mg-st-off{color:#ff8a8a;font-weight:700}.mg-st-unknown{color:var(--note)}
 .zone-facts{background:var(--card);border-radius:12px;padding:16px 18px;margin-bottom:12px;color:var(--muted)}
 .zone-facts b{color:var(--text)}
 .prop-index{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
@@ -236,15 +257,15 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       manifest.items.map(it => '<a href="#/' + esc(it.id) + '"><b>' + esc(it.title) + '</b><p class="muted small">' + esc(it.date) + '</p><p>' + esc(it.desc) + "</p></a>").join("") + "</div></main>";
   }
   async function itemPage(it, pageId, anchor) {
+    document.body.style.overflow = "";
     const page = it.pages.find(p => p.id === pageId) || it.pages[0];
     const pills = it.pages.map(p => '<a class="pill' + (p.id === page.id ? " on" : "") + '" href="#/' + esc(it.id) + "/" + esc(p.id) + '">' + esc(p.label) + "</a>").join("");
     const tools = (it.legend ? '<a class="pill" href="' + esc(it.legend) + '">Leyenda</a>' : "") +
-      (it.help ? '<button type="button" class="pill" id="help-btn" aria-expanded="false">¿Cómo valorar?</button>' : "") +
-      '<button type="button" class="pill accent" id="copy-btn"></button>';
+      (it.help ? '<button type="button" class="pill" id="help-btn" aria-expanded="false">¿Cómo valorar?</button><button type="button" class="pill accent" id="copy-btn"></button>' : "");
     const help = it.help ? '<div class="help" id="help" hidden>' + it.help.map(t => "<p>" + esc(t) + "</p>").join("") + "</div>" : "";
     app.innerHTML = '<header class="top"><div class="row"><span><a class="site" href="#/">' + esc(manifest.site) + '</a> · <span class="item">' + esc(it.title) + '</span></span><span class="tools">' + tools + '</span></div><nav class="pills">' + pills + '</nav></header><main class="page">' + help + '<div id="content"><p class="loading">Abriendo…</p></div></main>';
     const copyBtn = document.getElementById("copy-btn");
-    copyBtn.addEventListener("click", () => copyAll(it, copyBtn));
+    if (copyBtn) copyBtn.addEventListener("click", () => copyAll(it, copyBtn));
     updateCount(it);
     const helpBtn = document.getElementById("help-btn"), helpBox = document.getElementById("help");
     if (helpBtn) {
@@ -262,8 +283,76 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       img.src = blobUrls.get(b.chunk);
     }
     mountRatings(content, it);
+    await mountMaps(content, it);
+    mountFilters(content);
     for (const a of content.querySelectorAll("[data-scroll]")) a.addEventListener("click", () => { history.replaceState(null, "", "#/" + it.id + "/" + page.id + "/" + a.dataset.scroll); scrollToAnchor(a.dataset.scroll); });
     if (anchor) scrollToAnchor(anchor); else window.scrollTo(0, 0);
+  }
+  // ───── El mapa del mundo (exportado de Megraphvania): zoom, arrastre y la ficha de cada sala al pulsarla ─────
+  const jsonCache = new Map();
+  async function blobJson(it, name) {
+    const b = it.blobs && it.blobs[name]; if (!b) return {};
+    if (!jsonCache.has(b.chunk)) jsonCache.set(b.chunk, text(manifest.files[b.chunk]).then(JSON.parse).catch(() => ({})));
+    return jsonCache.get(b.chunk);
+  }
+  async function mountMaps(root, it) {
+    for (const view of root.querySelectorAll(".mg-view")) mapViewer(view, await blobJson(it, view.dataset.rooms));
+  }
+  function mapViewer(view, rooms) {
+    const stage = view.querySelector(".mg-stage"), box = view.querySelector(".mg-content"), svg = box.querySelector("svg");
+    if (!svg) return;
+    const vb = svg.viewBox && svg.viewBox.baseVal, w = vb && vb.width ? vb.width : 1000, h = vb && vb.height ? vb.height : 700;
+    view.insertAdjacentHTML("beforeend", '<div class="mg-tools"><button type="button" data-z="out" aria-label="Alejar">−</button><button type="button" data-z="in" aria-label="Acercar">+</button><button type="button" data-z="fit">Ajustar</button><button type="button" data-z="full" aria-pressed="false">⤢ Pantalla completa</button></div><aside class="mg-card" hidden aria-live="polite"></aside>');
+    const card = view.querySelector(".mg-card"), fullBtn = view.querySelector('[data-z="full"]');
+    let s = 1, tx = 0, ty = 0, moved = 0; const pts = new Map(); let pinch = null;
+    const apply = () => { box.style.width = w * s + "px"; box.style.height = h * s + "px"; box.style.left = tx + "px"; box.style.top = ty + "px"; };
+    const fit = () => { const r = stage.getBoundingClientRect(); if (!r.width) return; s = Math.min(r.width / w, r.height / h) * 0.97; tx = (r.width - w * s) / 2; ty = (r.height - h * s) / 2; apply(); };
+    const zoom = (f, cx, cy) => { const r = stage.getBoundingClientRect(); if (cx === undefined) { cx = r.width / 2; cy = r.height / 2; } const ns = Math.max(0.05, Math.min(s * f, 40)); tx = cx - (cx - tx) * ns / s; ty = cy - (cy - ty) * ns / s; s = ns; apply(); };
+    const center = el => { const r = stage.getBoundingClientRect(), b = el.getBoundingClientRect(); tx += r.left + r.width / 2 - (b.left + b.width / 2); ty += r.top + r.height / 2 - (b.top + b.height / 2); apply(); };
+    const select = id => { svg.querySelectorAll(".sel").forEach(x => x.classList.remove("sel")); if (!id) return null; const el = svg.querySelector('[data-room="' + CSS.escape(id) + '"]'); if (el) el.classList.add("sel"); return el; };
+    const closeCard = () => { card.hidden = true; select(""); };
+    function showRoom(id, recenter) {
+      const r = rooms[id]; if (!r) return;
+      const el = select(id);
+      const links = (r.links || []).map(l => '<li><a data-go="' + esc(l.to) + '">' + esc(l.name) + "</a>" + (l.area && l.area !== r.area ? ' <span class="mg-muted">(' + esc(l.area) + ")</span>" : "") + (l.req ? " — " + esc(l.req) : "") + (l.flags && l.flags.length ? ' <span class="mg-muted">' + esc(l.flags.join(", ")) + "</span>" : "") + "</li>").join("");
+      card.innerHTML = '<button type="button" class="x" aria-label="Cerrar">✕</button><h3>' + esc(r.name) + '</h3><p class="mg-muted small">' + esc(r.area) + " · <code>" + esc(id) + "</code>" + (r.difficulty !== undefined && r.difficulty !== null ? " · dificultad " + esc(r.difficulty) : "") + "</p>" +
+        (r.tags && r.tags.length ? "<div>" + r.tags.map(t => '<span class="mg-tag">' + esc(t) + "</span>").join("") + "</div>" : "") +
+        (r.notes ? "<h5>Notas</h5><p>" + esc(r.notes) + "</p>" : "") +
+        (r.contents && r.contents.length ? "<h5>Contenido</h5><ul>" + r.contents.map(x => "<li>" + esc(x) + "</li>").join("") + "</ul>" : "") +
+        (links ? "<h5>Conexiones</h5><ul>" + links + "</ul>" : "");
+      card.hidden = false; card.scrollTop = 0;
+      card.querySelector(".x").onclick = closeCard;
+      card.querySelectorAll("[data-go]").forEach(a => a.onclick = () => showRoom(a.dataset.go, true));
+      if (el) { const sr = el.getBoundingClientRect(), vr = stage.getBoundingClientRect(); if (recenter || sr.right < vr.left || sr.left > vr.right || sr.bottom < vr.top || sr.top > vr.bottom) center(el); }
+    }
+    const setFull = on => { view.classList.toggle("full", on); fullBtn.setAttribute("aria-pressed", String(on)); fullBtn.textContent = on ? "✕ Salir" : "⤢ Pantalla completa"; document.body.style.overflow = on ? "hidden" : ""; requestAnimationFrame(fit); };
+    view.querySelector(".mg-tools").addEventListener("click", ev => { const b = ev.target.closest("button"); if (!b) return; ({ in: () => zoom(1.4), out: () => zoom(1 / 1.4), fit, full: () => setFull(!view.classList.contains("full")) })[b.dataset.z](); });
+    stage.addEventListener("wheel", ev => { ev.preventDefault(); const r = stage.getBoundingClientRect(); zoom(Math.exp(-ev.deltaY * 0.0015), ev.clientX - r.left, ev.clientY - r.top); }, { passive: false });
+    stage.addEventListener("pointerdown", ev => { stage.setPointerCapture(ev.pointerId); pts.set(ev.pointerId, [ev.clientX, ev.clientY]); moved = 0; stage.classList.add("drag"); if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); } });
+    stage.addEventListener("pointermove", ev => {
+      if (!pts.has(ev.pointerId)) return; const [px, py] = pts.get(ev.pointerId); pts.set(ev.pointerId, [ev.clientX, ev.clientY]); moved += Math.abs(ev.clientX - px) + Math.abs(ev.clientY - py);
+      if (pts.size === 2 && pinch) { const [a, b] = [...pts.values()]; const d = Math.hypot(a[0] - b[0], a[1] - b[1]); const r = stage.getBoundingClientRect(); zoom(d / pinch, (a[0] + b[0]) / 2 - r.left, (a[1] + b[1]) / 2 - r.top); pinch = d; }
+      else if (pts.size === 1) { tx += ev.clientX - px; ty += ev.clientY - py; apply(); }
+    });
+    const up = ev => { pts.delete(ev.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) stage.classList.remove("drag"); };
+    stage.addEventListener("pointerup", ev => { const click = moved < 6 && pts.size === 1; up(ev); if (!click) return; const room = document.elementsFromPoint(ev.clientX, ev.clientY).map(x => x.closest && x.closest("[data-room]")).find(x => x && view.contains(x)); if (room) showRoom(room.getAttribute("data-room")); });
+    stage.addEventListener("pointercancel", up);
+    stage.addEventListener("dblclick", fit);
+    document.addEventListener("keydown", ev => { if (ev.key !== "Escape" || !view.isConnected || !lb.hidden) return; if (!card.hidden) closeCard(); else if (view.classList.contains("full")) setFull(false); });
+    window.addEventListener("resize", () => { if (view.isConnected) fit(); });
+    fit();
+  }
+  function mountFilters(root) {
+    const q = root.querySelector("[data-mg-filter]"), off = root.querySelector("[data-mg-off]"), count = root.querySelector("[data-mg-count]");
+    if (!q) return;
+    const rows = [...root.querySelectorAll(".mg-table tbody tr")];
+    const run = () => {
+      const t = q.value.trim().toLowerCase(); let shown = 0;
+      for (const tr of rows) { tr.hidden = (t && !tr.textContent.toLowerCase().includes(t)) || (off && off.checked && tr.dataset.status !== "off"); if (!tr.hidden) shown++; }
+      for (const wrap of root.querySelectorAll(".mg-table-wrap")) { const any = [...wrap.querySelectorAll("tbody tr")].some(tr => !tr.hidden); wrap.hidden = !any; const h = wrap.previousElementSibling; if (h && h.classList.contains("mg-h3")) h.hidden = !any; }
+      if (count) count.textContent = shown === rows.length ? rows.length + " objetos" : !shown && off && off.checked && !t ? "ninguno: los " + rows.length + " cumplen lo que se pidió" : shown + " de " + rows.length + " objetos";
+    };
+    q.addEventListener("input", run); if (off) off.addEventListener("change", run); run();
   }
   function scrollToAnchor(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
   async function render() {
