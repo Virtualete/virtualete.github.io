@@ -26,6 +26,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:.92em;color:var(--note)}
 main.page{padding:24px clamp(16px,4vw,48px) 80px;max-width:1700px;margin:0 auto}
 h1{font-family:var(--display);font-size:clamp(28px,4vw,48px);line-height:1.05;margin:8px 0 16px}
 h2{font-family:var(--display);font-size:clamp(22px,2.6vw,32px);margin:40px 0 14px}
+h2[id]{scroll-margin-top:120px}
 h4{margin:0 0 6px;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 p{margin:0 0 8px}.muted{color:var(--muted)}.small{font-size:13px}.lead{font-size:18px;color:var(--muted);max-width:980px}
 .hub{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
@@ -77,6 +78,26 @@ td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
 .rooms{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
 .room{margin:0;display:flex;flex-direction:column;gap:10px;min-width:0}
 .room figcaption{display:flex;flex-direction:column;gap:4px}.room figcaption b{font-size:17px}
+/* Valoraciones */
+.top .row{justify-content:space-between}
+.tools{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+button.pill{font:inherit;font-size:13px}
+.pill.accent{background:var(--note);border-color:var(--note);color:#2a2000;font-weight:700}
+.help{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:8px 0 4px;font-size:14px;max-width:1000px}
+.help[hidden]{display:none}.help p{margin:0 0 6px}.help b{color:var(--note)}
+.rates{display:flex;flex-direction:column;gap:6px;background:#1b1c24;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.rate-row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.rate-aspect{font-size:13px;color:var(--muted);flex:1 1 150px}
+.stars{display:flex}
+.star{width:34px;height:34px;border:0;background:none;color:#4a4858;font-size:22px;cursor:pointer;padding:0;line-height:1}
+.star.on{color:var(--note)}.star:hover{color:#ffe7a8}
+.star:focus-visible,.cmt-toggle:focus-visible{outline:2px solid var(--note);outline-offset:1px;border-radius:6px}
+.cmt-toggle{border:1px solid var(--line);background:none;color:var(--muted);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;min-height:34px}
+.cmt{width:100%;background:#12131a;border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;font-size:14px;padding:8px 10px;resize:vertical}
+.cmt[hidden]{display:none}
+.rate-prop .rates{max-width:780px}
+.legend-strip{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:0 0 14px}
+.legend-strip .lg i{width:10px;height:10px}
 /* El visor */
 .lb{position:fixed;inset:0;z-index:50;background:rgba(8,8,12,.97);display:flex;flex-direction:column}
 .lb[hidden]{display:none}
@@ -137,6 +158,74 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
   try { manifest = JSON.parse(await text(CFG.manifest)); } catch (_) { return deny(); }
   document.title = manifest.site;
   const blobUrls = new Map();
+  // ───── Valoraciones: estrellas y comentarios por propuesta y por sala, guardados en este navegador ─────
+  const STORE = "virtualete.valoraciones.v1", HELP_SEEN = "virtualete.ayuda-valoraciones";
+  let ratings = {};
+  try { ratings = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (_) { ratings = {}; }
+  let currentItem = null;
+  function saveRatings() { try { localStorage.setItem(STORE, JSON.stringify(ratings)); } catch (_) {} if (currentItem) updateCount(currentItem); }
+  const mine = it => Object.keys(ratings).filter(k => k.startsWith(it.id + ":") && ratings[k] && (ratings[k].s || (ratings[k].c || "").trim()));
+  function updateCount(it) {
+    currentItem = it;
+    const b = document.getElementById("copy-btn");
+    if (b && !b.dataset.flash) b.textContent = "Copiar valoraciones (" + mine(it).length + ")";
+  }
+  function orderKey(k) {
+    const m = k.split(":")[1].match(/^(\d+)\.p(\d+)(?:\.s(\d+))?\.(tema|diseno)$/);
+    return m ? [+m[1], +m[2], m[3] ? +m[3] : 0, m[4] === "tema" ? 0 : 1] : [999, 0, 0, 0];
+  }
+  function mountRatings(root, it) {
+    for (const slot of root.querySelectorAll("[data-rate]")) {
+      const id = it.id + ":" + slot.dataset.rate, group = slot.closest(".rates");
+      const meta = { zone: group.dataset.zone, prop: group.dataset.prop, room: group.dataset.room, aspect: slot.dataset.aspect };
+      slot.className = "rate";
+      slot.innerHTML = '<div class="rate-row"><span class="rate-aspect">' + esc(meta.aspect) + '</span><span class="stars" role="group" aria-label="' + esc(meta.aspect) + '">' +
+        [1, 2, 3, 4, 5].map(v => '<button type="button" class="star" data-v="' + v + '" aria-label="' + v + (v === 1 ? " estrella" : " estrellas") + '" aria-pressed="false">★</button>').join("") +
+        '</span><button type="button" class="cmt-toggle">Comentar</button></div><textarea class="cmt" rows="2" placeholder="Tu comentario…" aria-label="Comentario: ' + esc(meta.aspect) + '" hidden></textarea>';
+      const stars = [...slot.querySelectorAll(".star")], area = slot.querySelector(".cmt"), toggle = slot.querySelector(".cmt-toggle");
+      const paint = () => { const v = (ratings[id] || {}).s || 0; stars.forEach(b => { b.classList.toggle("on", +b.dataset.v <= v); b.setAttribute("aria-pressed", String(+b.dataset.v === v)); }); };
+      const put = patch => {
+        const next = Object.assign({}, ratings[id], meta, patch, { t: Date.now() });
+        if (!next.s && !(next.c || "").trim()) delete ratings[id]; else ratings[id] = next;
+        saveRatings();
+      };
+      const label = () => area.hidden ? ((area.value || "").trim() ? "Ver comentario" : "Comentar") : "Ocultar comentario";
+      stars.forEach(b => b.addEventListener("click", () => { const v = +b.dataset.v; put({ s: (ratings[id] || {}).s === v ? 0 : v }); paint(); }));
+      const saved = (ratings[id] || {}).c || "";
+      if (saved.trim()) { area.value = saved; area.hidden = false; }
+      toggle.textContent = label();
+      toggle.addEventListener("click", () => { area.hidden = !area.hidden; toggle.textContent = label(); if (!area.hidden) area.focus(); });
+      let timer;
+      area.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => put({ c: area.value }), 300); });
+      area.addEventListener("blur", () => { clearTimeout(timer); put({ c: area.value }); toggle.textContent = label(); });
+      paint();
+    }
+  }
+  function exportText(it) {
+    const keys = mine(it).sort((a, b) => { const x = orderKey(a), y = orderKey(b); for (let i = 0; i < 4; i++) if (x[i] !== y[i]) return x[i] - y[i]; return 0; });
+    if (!keys.length) return "";
+    const out = ["Valoraciones · " + it.title, "Copiado el " + new Date().toLocaleString("es-ES"), ""];
+    let zone = null, prop = null;
+    for (const k of keys) {
+      const r = ratings[k];
+      if (r.zone !== zone) { zone = r.zone; prop = null; out.push("", "## " + zone); }
+      if (r.prop !== prop) { prop = r.prop; out.push("### " + prop); }
+      const stars = r.s ? "★".repeat(r.s) + "☆".repeat(5 - r.s) + " (" + r.s + "/5)" : "sin estrellas";
+      const c = (r.c || "").trim();
+      out.push("- " + (r.room ? "Sala " + r.room : "Propuesta") + " · " + r.aspect + ": " + stars + (c ? " — " + c.replace(/\s*\n\s*/g, " / ") : ""));
+    }
+    return out.join("\n");
+  }
+  function flash(btn, text) { btn.dataset.flash = "1"; btn.textContent = text; setTimeout(() => { delete btn.dataset.flash; updateCount(currentItem); }, 1800); }
+  async function copyAll(it, btn) {
+    const text = exportText(it);
+    if (!text) return flash(btn, "Aún no has valorado nada");
+    try { await navigator.clipboard.writeText(text); return flash(btn, "¡Copiado!"); } catch (_) {}
+    const ta = document.createElement("textarea"); ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (_) {} ta.remove();
+    flash(btn, ok ? "¡Copiado!" : "No se ha podido copiar");
+  }
+
 
   function route() {
     const parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
@@ -149,7 +238,21 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
   async function itemPage(it, pageId, anchor) {
     const page = it.pages.find(p => p.id === pageId) || it.pages[0];
     const pills = it.pages.map(p => '<a class="pill' + (p.id === page.id ? " on" : "") + '" href="#/' + esc(it.id) + "/" + esc(p.id) + '">' + esc(p.label) + "</a>").join("");
-    app.innerHTML = '<header class="top"><div class="row"><a class="site" href="#/">' + esc(manifest.site) + '</a><span class="item">' + esc(it.title) + '</span></div><nav class="pills">' + pills + '</nav></header><main class="page" id="content"><p class="loading">Abriendo…</p></main>';
+    const tools = (it.legend ? '<a class="pill" href="' + esc(it.legend) + '">Leyenda</a>' : "") +
+      (it.help ? '<button type="button" class="pill" id="help-btn" aria-expanded="false">¿Cómo valorar?</button>' : "") +
+      '<button type="button" class="pill accent" id="copy-btn"></button>';
+    const help = it.help ? '<div class="help" id="help" hidden>' + it.help.map(t => "<p>" + esc(t) + "</p>").join("") + "</div>" : "";
+    app.innerHTML = '<header class="top"><div class="row"><span><a class="site" href="#/">' + esc(manifest.site) + '</a> · <span class="item">' + esc(it.title) + '</span></span><span class="tools">' + tools + '</span></div><nav class="pills">' + pills + '</nav></header><main class="page">' + help + '<div id="content"><p class="loading">Abriendo…</p></div></main>';
+    const copyBtn = document.getElementById("copy-btn");
+    copyBtn.addEventListener("click", () => copyAll(it, copyBtn));
+    updateCount(it);
+    const helpBtn = document.getElementById("help-btn"), helpBox = document.getElementById("help");
+    if (helpBtn) {
+      const setHelp = open => { helpBox.hidden = !open; helpBtn.setAttribute("aria-expanded", String(open)); helpBtn.classList.toggle("on", open); };
+      helpBtn.addEventListener("click", () => { setHelp(helpBox.hidden); try { localStorage.setItem(HELP_SEEN, "1"); } catch (_) {} });
+      let seen = false; try { seen = !!localStorage.getItem(HELP_SEEN); } catch (_) {}
+      if (!seen) setHelp(true);
+    }
     const on = app.querySelector(".pill.on"); if (on) on.scrollIntoView({ block: "nearest", inline: "center" });
     const content = document.getElementById("content");
     try { content.innerHTML = await text(manifest.files[page.chunk]); } catch (_) { content.innerHTML = '<p class="loading">No se ha podido abrir esta página.</p>'; return; }
@@ -158,6 +261,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       if (!blobUrls.has(b.chunk)) blobUrls.set(b.chunk, URL.createObjectURL(new Blob([await open(manifest.files[b.chunk])], { type: b.type })));
       img.src = blobUrls.get(b.chunk);
     }
+    mountRatings(content, it);
     for (const a of content.querySelectorAll("[data-scroll]")) a.addEventListener("click", () => { history.replaceState(null, "", "#/" + it.id + "/" + page.id + "/" + a.dataset.scroll); scrollToAnchor(a.dataset.scroll); });
     if (anchor) scrollToAnchor(anchor); else window.scrollTo(0, 0);
   }
