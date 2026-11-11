@@ -20,6 +20,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:.92em;color:var(--note)}
 .top .row{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline}
 .top .site{color:var(--muted);text-decoration:none;font-size:14px}
 .top .item{font-weight:700;font-size:16px}
+.site-frame{display:block;width:100%;border:0}
 .pills{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px;scrollbar-width:thin}
 .pill{flex:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--text);text-decoration:none;background:var(--card);cursor:pointer;white-space:nowrap}
 .pill:hover{border-color:var(--muted)}.pill.on{background:var(--accent);border-color:var(--accent);color:#1a0d19;font-weight:700}
@@ -355,10 +356,48 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
     q.addEventListener("input", run); if (off) off.addEventListener("change", run); run();
   }
   function scrollToAnchor(id) { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  // ───── Un sitio entero (el atlas): su página se abre en un marco; sus imágenes y su voz salen de los trozos cifrados ─────
+  let siteUrl = null;
+  function siteShim() {
+    const f = window.fetch;
+    window.fetch = function (u, o) {
+      const p = typeof u === "string" ? u : (u && u.url) || "";
+      if (p.indexOf("voz/") === 0 && window.parent && window.parent.__siteFile) {
+        return window.parent.__siteFile(p).then(b => new Response(b, { headers: { "Content-Type": /\.json$/.test(p) ? "application/json" : "video/mp4" } }));
+      }
+      return f.apply(this, arguments);
+    };
+  }
+  async function siteItem(it) {
+    app.dataset.view = it.id;
+    document.body.style.overflow = "";
+    app.innerHTML = '<header class="top"><div class="row"><span><a class="site" href="#/">' + esc(manifest.site) + '</a> · <span class="item">' + esc(it.title) + '</span></span></div></header><iframe class="site-frame" title="' + esc(it.title) + '"></iframe>';
+    const frame = app.querySelector(".site-frame"), bar = app.querySelector(".top");
+    const fit = () => { frame.style.height = Math.max(200, innerHeight - bar.offsetHeight) + "px"; };
+    fit();
+    window.addEventListener("resize", fit);
+    window.__siteFile = p => (it.site.files[p] ? open(manifest.files[it.site.files[p]]) : Promise.reject(new Error("sin archivo: " + p)));
+    if (!siteUrl) {
+      const ref = /(["'(\s=])img\/([^"'\s)<>?]+)(\?[^"'\s)<>]*)?/g;
+      let html = await text(manifest.files[it.site.entry]);
+      const urls = new Map();
+      await Promise.all([...new Set([...html.matchAll(ref)].map(m => m[2]))].map(async p => {
+        const id = it.site.files["img/" + p];
+        if (id) urls.set(p, URL.createObjectURL(new Blob([await open(manifest.files[id])], { type: "image/jpeg" })));
+      }));
+      html = html.replace(ref, (m, pre, p) => (urls.has(p) ? pre + urls.get(p) : m));
+      const at = html.indexOf("<head>");
+      if (at < 0) throw new Error("la página del sitio no tiene <head>");
+      html = html.slice(0, at + 6) + "<script>(" + siteShim.toString() + ")();<\/script>" + html.slice(at + 6);
+      siteUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    }
+    frame.src = siteUrl;
+  }
   async function render() {
     const r = route();
     const it = manifest.items.find(i => i.id === r.item);
     if (!it) return hub();
+    if (it.site) return siteItem(it);
     const current = app.dataset.view;
     const view = it.id + "/" + (r.page || it.pages[0].id);
     if (current === view && r.anchor) return scrollToAnchor(r.anchor);
