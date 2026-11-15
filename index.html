@@ -164,8 +164,12 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
   async function open(file) {
     if (cache.has(file)) return cache.get(file);
     const job = (async () => {
-      const res = await fetch("d/" + file, { cache: "no-cache" });
-      if (!res.ok) throw new Error("missing");
+      let res;
+      for (let i = 0; ; i++) {   // GitHub Pages devuelve a veces un 503 suelto: se reintenta antes de rendirse
+        try { res = await fetch("d/" + file, { cache: "no-cache" }); if (res.ok) break; } catch (_) { res = null; }
+        if (i >= 4) { cache.delete(file); throw new Error("missing"); }
+        await new Promise(r => setTimeout(r, 400 * 2 ** i));
+      }
       const buf = await res.arrayBuffer();
       const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(buf, 0, 12) }, key, new Uint8Array(buf, 12));
       const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream("gzip"));
@@ -359,39 +363,64 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
   // ───── Un sitio entero (el atlas): su página se abre en un marco; sus imágenes y su voz salen de los trozos cifrados ─────
   const siteUrls = {};   // la página de cada sitio (hay dos atlas), montada una sola vez
   function siteShim() {
+    // Corre dentro del marco, antes que la página del atlas. La voz y las imágenes salen de los trozos cifrados del padre, y solo
+    // cuando hacen falta: una imagen se pide al acercarse a la vista, y la grande del visor, al abrirla.
+    const P = window.parent;
     const f = window.fetch;
     window.fetch = function (u, o) {
       const p = typeof u === "string" ? u : (u && u.url) || "";
-      if (p.indexOf("voz/") === 0 && window.parent && window.parent.__siteFile) {
-        return window.parent.__siteFile(p).then(b => new Response(b, { headers: { "Content-Type": /\.json$/.test(p) ? "application/json" : "video/mp4" } }));
+      if (p.indexOf("voz/") === 0 && P && P.__siteFile) {
+        return P.__siteFile(p).then(b => new Response(b, { headers: { "Content-Type": /\.json$/.test(p) ? "application/json" : "video/mp4" } }));
       }
       return f.apply(this, arguments);
     };
+    const urls = new Map();
+    const url = p => { p = p.split("?")[0]; if (!urls.has(p)) urls.set(p, P.__siteFile(p).then(b => URL.createObjectURL(new Blob([b], { type: "image/jpeg" })))); return urls.get(p); };
+    const d = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "src");
+    Object.defineProperty(HTMLImageElement.prototype, "src", {
+      configurable: true, enumerable: d.enumerable,
+      get() { return d.get.call(this); },
+      set(v) {
+        if (typeof v === "string" && v.indexOf("img/") === 0 && P && P.__siteFile) { const el = this; url(v).then(u => d.set.call(el, u), () => {}); }
+        else d.set.call(this, v);
+      }
+    });
+    document.addEventListener("DOMContentLoaded", () => {
+      const ims = document.querySelectorAll("img[data-site-src]");
+      if (!("IntersectionObserver" in window)) { for (const im of ims) im.src = im.dataset.siteSrc; return; }
+      const io = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) { io.unobserve(e.target); e.target.src = e.target.dataset.siteSrc; } }, { rootMargin: "1500px 0px" });
+      for (const im of ims) io.observe(im);
+    });
   }
   async function siteItem(it) {
     app.dataset.view = it.id;
     document.body.style.overflow = "";
+    window.__siteFile = p => (it.site.files[p] ? open(manifest.files[it.site.files[p]]) : Promise.reject(new Error("sin archivo: " + p)));
+    if (!siteUrls[it.id]) {
+      app.innerHTML = '<p class="loading">Abriendo ' + esc(it.title) + '…</p>';
+      try {
+        let html = await text(manifest.files[it.site.entry]);
+        // las miniaturas no se bajan aquí: se dejan marcadas y el marco las pide al acercarse a la vista (siteShim)
+        const hueco = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+        html = html.replace(/ src="(img\/[^"]+)"/g, ' src="' + hueco + '" data-site-src="$1"');
+        const at = html.indexOf("<head>");
+        if (at < 0) throw new Error("la página del sitio no tiene <head>");
+        html = html.slice(0, at + 6) + "<script>(" + siteShim.toString() + ")();<\/script>" + html.slice(at + 6);
+        siteUrls[it.id] = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+      } catch (e) {
+        if (app.dataset.view !== it.id) return;
+        app.innerHTML = '<p class="loading">No se ha podido abrir ' + esc(it.title) + '. Puede ser la conexión o un fallo momentáneo de GitHub.<br><br><button type="button" id="site-retry">Reintentar</button></p>';
+        app.querySelector("#site-retry").onclick = () => siteItem(it);
+        return;
+      }
+    }
+    if (app.dataset.view !== it.id) return;
     // sin cabecera propia: el atlas ocupa toda la pantalla (su barra de arriba, en móvil, es la única cabecera)
     app.innerHTML = '<iframe class="site-frame" title="' + esc(it.title) + '"></iframe>';
     const frame = app.querySelector(".site-frame");
     const fit = () => { frame.style.height = innerHeight + "px"; };
     fit();
     window.addEventListener("resize", fit);
-    window.__siteFile = p => (it.site.files[p] ? open(manifest.files[it.site.files[p]]) : Promise.reject(new Error("sin archivo: " + p)));
-    if (!siteUrls[it.id]) {
-      const ref = /(["'(\s=])img\/([^"'\s)<>?]+)(\?[^"'\s)<>]*)?/g;
-      let html = await text(manifest.files[it.site.entry]);
-      const urls = new Map();
-      await Promise.all([...new Set([...html.matchAll(ref)].map(m => m[2]))].map(async p => {
-        const id = it.site.files["img/" + p];
-        if (id) urls.set(p, URL.createObjectURL(new Blob([await open(manifest.files[id])], { type: "image/jpeg" })));
-      }));
-      html = html.replace(ref, (m, pre, p) => (urls.has(p) ? pre + urls.get(p) : m));
-      const at = html.indexOf("<head>");
-      if (at < 0) throw new Error("la página del sitio no tiene <head>");
-      html = html.slice(0, at + 6) + "<script>(" + siteShim.toString() + ")();<\/script>" + html.slice(at + 6);
-      siteUrls[it.id] = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-    }
     frame.src = siteUrls[it.id];
   }
   async function render() {
