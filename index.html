@@ -372,6 +372,9 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       if (p.indexOf("voz/") === 0 && P && P.__siteFile) {
         return P.__siteFile(p).then(b => new Response(b, { headers: { "Content-Type": /\.json$/.test(p) ? "application/json" : "video/mp4" } }));
       }
+      if (p.indexOf("mapa/") === 0 && P && P.__siteFile) {   // el mapa interactivo del atlas (punto 0 de las zonas)
+        return P.__siteFile(p.split("?")[0]).then(b => new Response(b, { headers: { "Content-Type": "text/html; charset=utf-8" } }));
+      }
       return f.apply(this, arguments);
     };
     const urls = new Map();
