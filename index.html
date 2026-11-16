@@ -392,7 +392,16 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       for (const im of ims) io.observe(im);
     });
   }
-  async function siteItem(it) {
+  async function siteItem(it, sub) {
+    // la dirección lleva, detrás del sitio, a qué parte, versión o párrafo ir (#/atlas-v4/tsunami-v3); el atlas la va cambiando al leer
+    sub = sub ? decodeURIComponent(sub) : "";
+    window.__siteLink = id => location.href.split("#")[0] + "#/" + it.id + "/" + encodeURIComponent(id);
+    window.__siteHash = id => { const h = "#/" + it.id + (id ? "/" + encodeURIComponent(id) : ""); if (location.hash !== h) history.replaceState(null, "", h); };
+    const vivo = app.querySelector(".site-frame");
+    if (app.dataset.view === it.id && vivo) {      // ya está abierto: solo se le dice adónde ir
+      try { const w = vivo.contentWindow; if (sub && decodeURIComponent(w.location.hash.slice(1)) !== sub) w.location.hash = encodeURIComponent(sub); } catch (_) {}
+      return;
+    }
     app.dataset.view = it.id;
     document.body.style.overflow = "";
     window.__siteFile = p => (it.site.files[p] ? open(manifest.files[it.site.files[p]]) : Promise.reject(new Error("sin archivo: " + p)));
@@ -410,7 +419,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       } catch (e) {
         if (app.dataset.view !== it.id) return;
         app.innerHTML = '<p class="loading">No se ha podido abrir ' + esc(it.title) + '. Puede ser la conexión o un fallo momentáneo de GitHub.<br><br><button type="button" id="site-retry">Reintentar</button></p>';
-        app.querySelector("#site-retry").onclick = () => siteItem(it);
+        app.querySelector("#site-retry").onclick = () => siteItem(it, sub && encodeURIComponent(sub));
         return;
       }
     }
@@ -421,13 +430,13 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
     const fit = () => { frame.style.height = innerHeight + "px"; };
     fit();
     window.addEventListener("resize", fit);
-    frame.src = siteUrls[it.id];
+    frame.src = siteUrls[it.id] + (sub ? "#" + encodeURIComponent(sub) : "");
   }
   async function render() {
     const r = route();
     const it = manifest.items.find(i => i.id === r.item);
     if (!it) return hub();
-    if (it.site) return siteItem(it);
+    if (it.site) return siteItem(it, r.page);
     const current = app.dataset.view;
     const view = it.id + "/" + (r.page || it.pages[0].id);
     if (current === view && r.anchor) return scrollToAnchor(r.anchor);
