@@ -384,7 +384,10 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
       configurable: true, enumerable: d.enumerable,
       get() { return d.get.call(this); },
       set(v) {
-        if (typeof v === "string" && v.indexOf("img/") === 0 && P && P.__siteFile) { const el = this; url(v).then(u => d.set.call(el, u), () => {}); }
+        // manda la última que se pide: si se piden dos seguidas (la que se acerca a la vista y otra que elige el atlas), no gana la
+        // que tarde más en bajarse
+        const el = this; el.__quiere = v;
+        if (typeof v === "string" && v.indexOf("img/") === 0 && P && P.__siteFile) url(v).then(u => { if (el.__quiere === v) d.set.call(el, u); }, () => {});
         else d.set.call(this, v);
       }
     });
